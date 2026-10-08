@@ -1,18 +1,58 @@
 // Township Overview — мультивыбор биомов, фильтр по производству и показ сломанных зданий.
+// Интерфейс на русском или английском — по языку игры.
 // Написано под Melvor Idle v1.3.1.
 
 const STORAGE_KEY = 'state';
 
+const STRINGS = {
+    en: {
+        multi: 'Multi-select',
+        all: 'All',
+        clear: 'Clear',
+        produces: 'Produces:',
+        broken: 'Broken',
+        resetFilters: 'Reset filters',
+        openBiome: 'Open biome',
+        repairAllInBiome: 'Repair all in biome',
+        nothingFound: 'Nothing matches the filters.',
+        population: 'Population',
+        happiness: 'Happiness',
+        education: 'Education',
+        storage: 'Storage',
+        worship: 'Worship',
+        fortification: 'Fortification',
+        soulStorage: 'Soul storage',
+    },
+    ru: {
+        multi: 'Мультивыбор',
+        all: 'Все',
+        clear: 'Сброс',
+        produces: 'Производит:',
+        broken: 'Сломанные',
+        resetFilters: 'Сбросить фильтры',
+        openBiome: 'Открыть биом',
+        repairAllInBiome: 'Починить все в биоме',
+        nothingFound: 'Под фильтры ничего не подходит.',
+        population: 'Население',
+        happiness: 'Счастье',
+        education: 'Образование',
+        storage: 'Хранилище',
+        worship: 'Поклонение',
+        fortification: 'Укрепление',
+        soulStorage: 'Хранилище душ',
+    },
+};
+
+/** Строка интерфейса на языке игры (русский или английский) */
+const tr = (key) => (STRINGS[setLang] || STRINGS.en)[key];
+
 /** Характеристики города, которые дают здания (кроме ресурсов) */
-const STATS = [
-    { key: 'population', name: 'Население' },
-    { key: 'happiness', name: 'Счастье' },
-    { key: 'education', name: 'Образование' },
-    { key: 'storage', name: 'Хранилище' },
-    { key: 'worship', name: 'Поклонение' },
-    { key: 'fortification', name: 'Укрепление' },
-    { key: 'soulStorage', name: 'Хранилище душ' },
-];
+const STATS = ['population', 'happiness', 'education', 'storage', 'worship', 'fortification', 'soulStorage'].map((key) => ({
+    key,
+    get name() {
+        return tr(key);
+    },
+}));
 const STAT_PREFIX = 'stat:';
 
 export function setup(ctx) {
@@ -41,7 +81,7 @@ export function setup(ctx) {
             state.biomes = new Set(saved.biomes || []);
             state.produces = new Set(saved.produces || saved.resources || []);
         } catch (e) {
-            console.warn('[Township Overview] не удалось загрузить настройки', e);
+            console.warn('[Township Overview] failed to load settings', e);
         }
     }
 
@@ -54,7 +94,7 @@ export function setup(ctx) {
                 produces: [...state.produces],
             });
         } catch (e) {
-            console.warn('[Township Overview] не удалось сохранить настройки', e);
+            console.warn('[Township Overview] failed to save settings', e);
         }
     }
 
@@ -228,8 +268,8 @@ export function setup(ctx) {
         ui.multiBtn.classList.toggle('btn-primary', state.multi);
         ui.multiBtn.classList.toggle('btn-outline-primary', !state.multi);
         ui.multiBtn.innerHTML = state.multi
-            ? '<i class="fa fa-check-square mr-1"></i>Мультивыбор'
-            : '<i class="far fa-square mr-1"></i>Мультивыбор';
+            ? `<i class="fa fa-check-square mr-1"></i>${tr('multi')}`
+            : `<i class="far fa-square mr-1"></i>${tr('multi')}`;
         ui.biomeBulk.classList.toggle('d-none', !state.multi);
 
         // Один выбранный биом — обычный интерфейс игры для него
@@ -259,7 +299,7 @@ export function setup(ctx) {
         const none = state.produces.size === 0;
         ui.resChips.innerHTML =
             `<button type="button" class="btn btn-sm ${none ? 'btn-info' : 'btn-outline-secondary'} tso-chip tso-chip-all"
-                data-tso-res="*">Все</button>` +
+                data-tso-res="*">${tr('all')}</button>` +
             stats.map((o) => chip(o, state.produces.has(o.id))).join('') +
             '<span class="tso-sep"></span>' +
             resources.map((o) => chip(o, state.produces.has(o.id))).join('');
@@ -355,7 +395,7 @@ export function setup(ctx) {
         const costs = t.getTotalRepairCostInBiome(biome);
         const can = t.canAffordRepairAllCosts(costs);
         return `<button type="button" class="btn btn-sm btn-warning ml-2 tso-open-btn" data-tso-repair-all="${esc(biome.id)}"
-                ${can ? '' : 'disabled'}><i class="fa fa-tools mr-1"></i>Починить все в биоме</button>
+                ${can ? '' : 'disabled'}><i class="fa fa-tools mr-1"></i>${tr('repairAllInBiome')}</button>
             <ul class="nav-main nav-main-horizontal nav-main-horizontal-override font-w400 font-size-xs ml-2 mb-0 tso-inline-costs">
                 ${townshipUI.getRepairAllCostHTML(costs)}</ul>`;
     }
@@ -401,7 +441,7 @@ export function setup(ctx) {
                 <span class="font-w600">${esc(biome.name)}</span>
                 <small class="text-muted ml-1">${buildings.length}</small>
                 <button type="button" class="btn btn-sm btn-outline-secondary ml-2 tso-open-btn" data-tso-open="${esc(biome.id)}">
-                    <i class="fa fa-external-link-alt mr-1"></i>Открыть биом</button>
+                    <i class="fa fa-external-link-alt mr-1"></i>${tr('openBiome')}</button>
                 ${renderRepairAll(biome)}`;
             nodes.push(header);
             for (const building of buildings) {
@@ -411,7 +451,7 @@ export function setup(ctx) {
             }
         }
         if (nodes.length === 0) {
-            nodes.push(createElement('div', { className: 'col-12 p-3 text-muted', text: 'Под фильтры ничего не подходит.' }));
+            nodes.push(createElement('div', { className: 'col-12 p-3 text-muted', text: tr('nothingFound') }));
         }
         // Сначала вставляем в DOM (карточка дособирается в connectedCallback), потом заполняем.
         // Если состав не поменялся — DOM не трогаем: при каждой вставке карточка создаёт новую подсказку.
@@ -454,8 +494,8 @@ export function setup(ctx) {
         biomeBar.innerHTML = `
             <button type="button" class="btn btn-sm btn-outline-primary" data-tso="multi"></button>
             <span data-tso="bulk">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-tso="all">Все</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-tso="none">Сброс</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-tso="all">${tr('all')}</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-tso="none">${tr('clear')}</button>
             </span>`;
         biomeList.before(biomeBar);
         ui.multiBtn = biomeBar.querySelector('[data-tso="multi"]');
@@ -478,13 +518,13 @@ export function setup(ctx) {
         filterBar.innerHTML = `
             <div class="block block-rounded mb-0 p-2">
                 <div class="d-flex flex-wrap align-items-center">
-                    <small class="font-w600 mr-2">Производит:</small>
+                    <small class="font-w600 mr-2">${tr('produces')}</small>
                     <span data-tso="chips" class="d-flex flex-wrap align-items-center"></span>
                 </div>
                 <div class="mt-1">
                     <button type="button" class="btn btn-sm btn-outline-danger" data-tso="broken">
-                        <i class="fa fa-tools mr-1"></i>Сломанные<span data-tso="broken-count"></span></button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" data-tso="reset">Сбросить фильтры</button>
+                        <i class="fa fa-tools mr-1"></i>${tr('broken')}<span data-tso="broken-count"></span></button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" data-tso="reset">${tr('resetFilters')}</button>
                 </div>
             </div>`;
         ui.resChips = filterBar.querySelector('[data-tso="chips"]');
