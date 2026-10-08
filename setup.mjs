@@ -5,13 +5,13 @@ const STORAGE_KEY = 'state';
 
 /** Характеристики города, которые дают здания (кроме ресурсов) */
 const STATS = [
-    { key: 'population', name: 'Население', get: 'getPopulationProvidesForBiome' },
-    { key: 'happiness', name: 'Счастье', get: 'getHappinessProvidesForBiome' },
-    { key: 'education', name: 'Образование', get: 'getEducationProvidesForBiome' },
-    { key: 'storage', name: 'Хранилище', get: 'getStorageProvidesForBiome' },
-    { key: 'worship', name: 'Поклонение', get: 'getWorshipProvidesForBiome' },
-    { key: 'fortification', name: 'Укрепление', get: 'getFortificationProvidesForBiome' },
-    { key: 'soulStorage', name: 'Хранилище душ', get: 'getSoulStorageProvidesForBiome' },
+    { key: 'population', name: 'Население' },
+    { key: 'happiness', name: 'Счастье' },
+    { key: 'education', name: 'Образование' },
+    { key: 'storage', name: 'Хранилище' },
+    { key: 'worship', name: 'Поклонение' },
+    { key: 'fortification', name: 'Укрепление' },
+    { key: 'soulStorage', name: 'Хранилище душ' },
 ];
 const STAT_PREFIX = 'stat:';
 
@@ -65,15 +65,6 @@ export function setup(ctx) {
 
     const icon = (path) => assets.getURI(path);
 
-    function fmt(n) {
-        const abs = Math.abs(n);
-        if (abs >= 1000) return formatNumber(Math.round(n));
-        if (abs >= 10) return String(Math.round(n));
-        return String(Math.round(n * 100) / 100);
-    }
-
-    const signed = (n) => `${n > 0 ? '+' : ''}${fmt(n)}`;
-
     /** То же условие, по которому игра показывает карточку здания в биоме */
     function isShownInBiome(building, biome) {
         const t = township();
@@ -95,13 +86,6 @@ export function setup(ctx) {
     /** Сломано только то, что построено: у пустых зданий бывает «залипший» износ */
     function isBroken(building, biome) {
         return producer(building, biome).count > 0 && township().buildingRequiresRepair(building, biome);
-    }
-
-    /** Сколько зданий построит кнопка — так же, как считает сама игра */
-    function buildQty(building, biome) {
-        const t = township();
-        const qty = t.upgradeQty > 0 ? t.upgradeQty : t.getMaxAffordableBuildingQty(building, biome);
-        return Math.min(t.getBuildingCountRemainingForLevelUp(building, biome), qty);
     }
 
     function producesSelected(building, biome) {
@@ -296,150 +280,117 @@ export function setup(ctx) {
         ui.brokenCount.textContent = total > 0 ? ` (${total})` : '';
     }
 
-    function statLine(img, value, title, hl) {
-        const cls = value < 0 ? 'text-danger' : 'text-success';
-        return `<span class="tso-res${hl ? ' tso-res-hl' : ''}" title="${esc(title)}">
-            <img src="${esc(img)}" class="tso-icon-sm"><span class="${cls}">${signed(value)}</span></span>`;
-    }
+    /** Проверить, что у здания можно сделать, и оставить на карточке только эти кнопки */
+    function applyActions(el, building, biome) {
+        const t = township();
+        const maxed = t.isBuildingMaxed(building, biome);
+        const canTier = t.canBuildTierOfBuilding(building);
+        const canBuild = !maxed && canTier;
+        const broken = isBroken(building, biome);
 
-    /** Сколько ресурса есть у игрока — как в игре: GP и AP хранятся отдельно от ресурсов города */
-    function haveAmount(resource) {
-        switch (resource.id) {
-            case 'melvorF:GP':
-                return game.gp.amount;
-            case 'melvorItA:AP':
-                return game.abyssalPieces !== undefined ? game.abyssalPieces.amount : 0;
-            default:
-                return resource.amount;
+        // Жёлтая кнопка ремонта — рядом с зелёной кнопкой стройки
+        if (el.repairButton.previousElementSibling !== el.upgradeButtonGroup) {
+            el.upgradeButtonGroup.after(el.repairButton);
+            el.repairButton.classList.add('tso-repair-btn');
+        }
+
+        if (!maxed && !canTier) showElement(el.requirementsContainer);
+        else hideElement(el.requirementsContainer);
+
+        if (canBuild) {
+            showElement(el.upgradesToContainer);
+            showElement(el.upgradeButtonGroup);
+        } else {
+            hideElement(el.upgradesToContainer);
+            hideElement(el.upgradeButtonGroup);
+        }
+
+        if (broken) {
+            el.updateBuildingRepairCosts(building, t);
+            showElement(el.repairContainer);
+            showElement(el.repairButton);
+        } else {
+            hideElement(el.repairContainer);
+            hideElement(el.repairButton);
         }
     }
 
-    function costItem(resource, cost) {
-        const cls = haveAmount(resource) >= cost ? 'text-success' : 'text-danger font-w600';
-        return `<span class="tso-res ${cls}"><img src="${esc(resource.media)}" class="tso-icon-sm">${fmt(cost)}</span>`;
+    /** Подменить текущий биом без побочных эффектов — чтобы игровая карточка нарисовалась для другого биома */
+    function withBiomeSilently(biome, fn) {
+        const t = township();
+        const prev = t.currentTownBiome;
+        t.currentTownBiome = biome;
+        try {
+            fn(t);
+        } finally {
+            t.currentTownBiome = prev;
+        }
     }
 
-    /** Стоимость постройки qty зданий — та же формула, что в карточке игры */
-    function renderBuildCost(building, biome, qty) {
-        const t = township();
-        return t
-            .getBuildingCostsForBiome(building, biome)
-            .map(({ resource, quantity }) => {
-                let cost = quantity * qty;
-                if (resource.type !== TownshipResourceTypeID.Currency) cost = t.modifyBuildingResourceCost(cost);
-                return cost > 0 ? costItem(resource, cost) : '';
-            })
-            .join('');
+    const gridCards = new Map(); // `${biome.id}|${building.id}` -> BuildingInTownElement
+    const gridHeaders = new Map(); // biome.id -> div
+
+    function getGridCard(building, biome) {
+        const key = `${biome.id}|${building.id}`;
+        let el = gridCards.get(key);
+        if (el === undefined) {
+            el = new BuildingInTownElement();
+            el.className = 'col-12 col-sm-6 col-xl-4';
+            el.initQtyDropdowns(townshipUI);
+            gridCards.set(key, el);
+        }
+        return el;
     }
 
-    function renderRepairCost(building, biome) {
-        const t = township();
-        const forCosts =
-            biome.getBuildingCount(building) === 0 && building.upgradesFrom !== undefined ? building.upgradesFrom : building;
-        return t
-            .getBuildingCostsForBiome(forCosts, biome)
-            .map(({ resource, quantity }) => {
-                return costItem(resource, Math.floor(t.getSingleResourceRepairCostForBuilding(building, biome, quantity)));
-            })
-            .join('');
-    }
-
-    function renderCard(building, biome) {
-        const t = township();
-        const count = biome.getBuildingCount(building);
-        const max = building.maxUpgrades;
-        const eff = t.getBuildingEfficiencyInBiome(building, biome);
-        const effClass = eff >= 100 ? 'text-success' : eff >= 50 ? 'text-warning' : 'text-danger';
-        const src = producer(building, biome);
-        const provides = t.getProvidesForBiome(src.building, biome);
-
-        // Итоговое производство всех зданий этого типа, с учётом износа
-        let out = '';
-        STATS.forEach((s) => {
-            if (provides === undefined || !provides[s.key]) return;
-            const v = t[s.get](src.building, biome) * src.count;
-            if (v !== 0) out += statLine(icon(townshipIcons[s.key]), v, s.name, state.produces.has(STAT_PREFIX + s.key));
+    function updateGridCard(el, building, biome) {
+        withBiomeSilently(biome, (t) => {
+            el.setBuilding(building, t);
+            el.updateBuildingRequirements(building, t);
+            applyActions(el, building, biome);
         });
-        if (provides !== undefined) {
-            provides.resources.forEach((qty, resource) => {
-                if (qty === 0) return;
-                const v = t.getSingleResourceGainAmountInBiome(resource, src.building, biome, true) * src.count;
-                out += statLine(resource.media, v, `${resource.name} за тик`, state.produces.has(resource.id));
-            });
-        }
-
-        const upgradeName = building.upgradesTo !== undefined ? building.upgradesTo.name : '';
-        const pct = max > 0 ? Math.min(100, (count / max) * 100) : 0;
-
-        let buildHtml = '';
-        let buildCostHtml = '';
-        if (count < max) {
-            const qty = buildQty(building, biome);
-            const tierOk = t.canBuildTierOfBuilding(building);
-            const can = tierOk && qty > 0 && t.canAffordBuilding(building, biome, qty);
-            const why = !tierOk ? 'Не выполнены требования' : 'Не хватает ресурсов';
-            buildHtml = `<button type="button" class="btn btn-sm btn-success mr-1" data-tso-build="${esc(building.id)}"
-                data-tso-biome="${esc(biome.id)}" ${can ? '' : `disabled title="${why}"`}>
-                <i class="fa fa-hammer mr-1"></i>Построить${qty > 1 ? ` ×${qty}` : ''}</button>`;
-            buildCostHtml = `<div class="mt-1"><small class="font-w600 mr-1">Стоимость (${Math.max(qty, 1)}):</small>
-                <small>${renderBuildCost(building, biome, Math.max(qty, 1))}</small></div>`;
-        }
-
-        let repairHtml = '';
-        if (isBroken(building, biome)) {
-            const canAfford = t.canAffordRepair(building, biome);
-            repairHtml = `<div class="mt-1 d-flex flex-wrap align-items-center">
-                <button type="button" class="btn btn-sm btn-warning mr-2" data-tso-repair="${esc(building.id)}"
-                    data-tso-biome="${esc(biome.id)}" ${canAfford ? '' : 'disabled title="Не хватает ресурсов"'}>
-                    <i class="fa fa-tools mr-1"></i>Починить</button>
-                <small>${renderRepairCost(building, biome)}</small>
-            </div>`;
-        }
-
-        return `<div class="col-12 col-md-6 col-xl-4 p-1">
-            <div class="block block-rounded mb-0 p-2 h-100 tso-card ${isBroken(building, biome) ? 'tso-broken' : ''}">
-                <div class="d-flex align-items-start">
-                    <img src="${esc(building.media)}" class="tso-icon-lg mr-2">
-                    <div class="flex-grow-1 min-w-0">
-                        <div class="d-flex justify-content-between">
-                            <span class="font-w600">${esc(building.name)}</span>
-                            ${src.count > 0 ? `<small class="${effClass} font-w600 text-nowrap ml-1"><i class="fa fa-tools"></i> ${fmt(eff)}%</small>` : ''}
-                        </div>
-                        <div class="progress tso-progress mt-1">
-                            <div class="progress-bar ${count >= max ? 'bg-success' : 'bg-info'}" style="width:${pct}%"></div>
-                        </div>
-                        <small class="text-muted">${count} / ${max}${upgradeName ? ` до улучшения: ${esc(upgradeName)}` : ''}</small>
-                    </div>
-                </div>
-                ${out ? `<div class="mt-1">${out}</div>` : ''}
-                ${buildCostHtml}
-                ${repairHtml}
-                <div class="mt-1">
-                    ${buildHtml}
-                    <button type="button" class="btn btn-sm btn-outline-secondary" data-tso-open="${esc(biome.id)}">
-                        <i class="fa fa-external-link-alt mr-1"></i>Открыть биом</button>
-                </div>
-            </div>
-        </div>`;
+        // setBuilding вешает обработчики на текущий биом — перевешиваем на биом карточки
+        el.upgradeButton.onclick = () => buildIn(building, biome);
+        el.repairButton.onclick = () => repairIn(building, biome);
     }
 
     function renderGrid() {
-        let html = '';
-        let shown = 0;
+        const nodes = [];
+        const pending = [];
         for (const biome of selectedBiomes()) {
-            const cards = biome.availableBuildings
-                .filter((b) => isShownInBiome(b, biome) && passesFilters(b, biome))
-                .map((b) => renderCard(b, biome));
-            if (cards.length === 0) continue;
-            shown += cards.length;
-            html += `<div class="col-12 mt-2 mb-1 tso-biome-header">
-                <img src="${esc(biome.media)}" class="tso-icon-md mr-1">
+            const buildings = biome.availableBuildings.filter((b) => isShownInBiome(b, biome) && passesFilters(b, biome));
+            if (buildings.length === 0) continue;
+            let header = gridHeaders.get(biome.id);
+            if (header === undefined) {
+                header = createElement('div', { className: 'col-12 mt-2 mb-1 tso-biome-header' });
+                gridHeaders.set(biome.id, header);
+            }
+            header.innerHTML = `<img src="${esc(biome.media)}" class="tso-icon-md mr-1">
                 <span class="font-w600">${esc(biome.name)}</span>
-                <small class="text-muted ml-1">${cards.length}</small>
-            </div>${cards.join('')}`;
+                <small class="text-muted ml-1">${buildings.length}</small>
+                <button type="button" class="btn btn-sm btn-outline-secondary ml-2 tso-open-btn" data-tso-open="${esc(biome.id)}">
+                    <i class="fa fa-external-link-alt mr-1"></i>Открыть биом</button>`;
+            nodes.push(header);
+            for (const building of buildings) {
+                const el = getGridCard(building, biome);
+                nodes.push(el);
+                pending.push([el, building, biome]);
+            }
         }
-        if (shown === 0) html = `<div class="col-12 p-3 text-muted">Под фильтры ничего не подходит.</div>`;
-        ui.grid.innerHTML = html;
+        if (nodes.length === 0) {
+            nodes.push(createElement('div', { className: 'col-12 p-3 text-muted', text: 'Под фильтры ничего не подходит.' }));
+        }
+        // Сначала вставляем в DOM (карточка дособирается в connectedCallback), потом заполняем.
+        // Если состав не поменялся — DOM не трогаем: при каждой вставке карточка создаёт новую подсказку.
+        const current = ui.grid.children;
+        const same = current.length === nodes.length && nodes.every((n, i) => current[i] === n);
+        if (!same) {
+            ui.grid.replaceChildren(...nodes);
+            pending.forEach(([el]) => {
+                if (el._tsoTooltip && el._tsoTooltip !== el.upgradesToTooltip) el._tsoTooltip.destroy();
+                el._tsoTooltip = el.upgradesToTooltip;
+            });
+        }
+        pending.forEach(([el, building, biome]) => updateGridCard(el, building, biome));
     }
 
     function render() {
@@ -517,20 +468,6 @@ export function setup(ctx) {
         ui.grid = createElement('div', { className: `${tsTown.className} tso-grid d-none` });
         ui.grid.onclick = (e) => {
             const t = township();
-            const repair = e.target.closest('[data-tso-repair]');
-            if (repair) {
-                const building = t.buildings.getObjectByID(repair.dataset.tsoRepair);
-                const biome = t.biomes.getObjectByID(repair.dataset.tsoBiome);
-                if (building && biome) repairIn(building, biome);
-                return;
-            }
-            const build = e.target.closest('[data-tso-build]');
-            if (build) {
-                const building = t.buildings.getObjectByID(build.dataset.tsoBuild);
-                const biome = t.biomes.getObjectByID(build.dataset.tsoBiome);
-                if (building && biome) buildIn(building, biome);
-                return;
-            }
             const open = e.target.closest('[data-tso-open]');
             if (open) {
                 const biome = t.biomes.getObjectByID(open.dataset.tsoOpen);
@@ -556,6 +493,12 @@ export function setup(ctx) {
         const el = townshipUI.buildingsInTown.get(building);
         if (biome === undefined || el === undefined) return;
         if (!passesFilters(building, biome)) hideElement(el);
+        else if (!el.classList.contains('d-none')) applyActions(el, building, biome);
+    });
+
+    // Смена количества для постройки (1 / 5 / … / Макс) — пересчитать цены в сетке
+    ctx.patch(TownshipUI, 'setUpgradeQty').after(() => {
+        if (initialized && useGrid()) scheduleRender();
     });
 
     ctx.patch(TownshipUI, 'updateTownSummary').after(() => scheduleRender());

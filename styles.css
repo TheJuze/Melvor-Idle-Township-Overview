@@ -5,38 +5,6 @@
 .tso-chip {
     padding: 2px 4px;
 }
-.tso-icon-sm {
-    width: 18px;
-    height: 18px;
-    margin-right: 2px;
-    vertical-align: middle;
-}
-.tso-icon-md {
-    width: 24px;
-    height: 24px;
-    vertical-align: middle;
-}
-.tso-icon-lg {
-    width: 40px;
-    height: 40px;
-}
-.tso-card.tso-broken {
-    border-left: 3px solid #e04f1a;
-}
-.tso-res {
-    display: inline-block;
-    margin-right: 8px;
-    font-size: 0.85rem;
-    white-space: nowrap;
-}
-.tso-res-hl {
-    font-weight: 600;
-    text-decoration: underline;
-}
-.tso-broken-badge {
-    font-size: 0.7rem;
-    vertical-align: middle;
-}
 .tso-chip-all {
     font-size: 0.8rem;
     padding: 2px 8px;
@@ -48,6 +16,25 @@
     margin: 0 6px 4px 2px;
     background: rgba(255, 255, 255, 0.25);
 }
-.tso-progress {
-    height: 5px;
+.tso-icon-sm {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+}
+.tso-icon-md {
+    width: 24px;
+    height: 24px;
+    vertical-align: middle;
+}
+.tso-broken-badge {
+    font-size: 0.7rem;
+    vertical-align: middle;
+}
+.tso-open-btn {
+    padding: 0 6px;
+    font-size: 0.75rem;
+}
+/* Жёлтая кнопка ремонта рядом с зелёной кнопкой стройки */
+.tso-repair-btn {
+    margin-top: 4px;
 }
