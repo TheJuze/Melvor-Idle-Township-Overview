@@ -237,9 +237,12 @@ export function setup(ctx) {
         if (state.multi && selected.length === 1 && township().currentTownBiome !== selected[0])
             township().setTownBiome(selected[0], false);
 
+        // В сетке прячем только игровые карточки зданий (CSS), а ряды «Починить все» и здоровья остаются.
+        // Кнопка «Починить все в биоме» в сетке переезжает в заголовок каждого биома.
         const grid = useGrid();
-        ui.tsTown.classList.toggle('d-none', grid);
-        ui.grid.classList.toggle('d-none', !grid);
+        ui.tsTown.classList.toggle('tso-grid-mode', grid);
+        ui.gridWrap.classList.toggle('d-none', !grid);
+        if (ui.biomeRepairRow) ui.biomeRepairRow.classList.toggle('d-none', grid);
         syncHighlights();
         if (!grid) townshipUI.updateTownSummary();
         scheduleRender();
@@ -306,7 +309,7 @@ export function setup(ctx) {
         }
 
         // Рядом с кнопкой стройки — по верху, одна — по центру
-        el.repairButton.classList.toggle('tso-repair-top', canBuild);
+        alignRepairButton(el, canBuild && broken);
 
         if (broken) {
             el.updateBuildingRepairCosts(building, t);
@@ -316,6 +319,21 @@ export function setup(ctx) {
             hideElement(el.repairContainer);
             hideElement(el.repairButton);
         }
+    }
+
+    /**
+     * Разметку вокруг кнопок задаёт игра, поэтому выравниваем по факту:
+     * меряем, насколько жёлтая кнопка ниже зелёной, и сдвигаем её вверх.
+     */
+    function alignRepairButton(el, both) {
+        el.repairButton.style.transform = '';
+        if (!both) return;
+        requestAnimationFrame(() => {
+            if (el.repairButton.offsetParent === null || el.upgradeButton.offsetParent === null) return;
+            el.repairButton.style.transform = '';
+            const d = el.upgradeButton.getBoundingClientRect().top - el.repairButton.getBoundingClientRect().top;
+            if (Math.abs(d) > 0.5) el.repairButton.style.transform = `translateY(${d}px)`;
+        });
     }
 
     /** Подменить текущий биом без побочных эффектов — чтобы игровая карточка нарисовалась для другого биома */
@@ -328,6 +346,18 @@ export function setup(ctx) {
         } finally {
             t.currentTownBiome = prev;
         }
+    }
+
+    /** «Починить все в биоме» со стоимостью — для заголовка биома в сетке */
+    function renderRepairAll(biome) {
+        if (countBroken(biome) === 0) return '';
+        const t = township();
+        const costs = t.getTotalRepairCostInBiome(biome);
+        const can = t.canAffordRepairAllCosts(costs);
+        return `<button type="button" class="btn btn-sm btn-warning ml-2 tso-open-btn" data-tso-repair-all="${esc(biome.id)}"
+                ${can ? '' : 'disabled'}><i class="fa fa-tools mr-1"></i>Починить все в биоме</button>
+            <ul class="nav-main nav-main-horizontal nav-main-horizontal-override font-w400 font-size-xs ml-2 mb-0 tso-inline-costs">
+                ${townshipUI.getRepairAllCostHTML(costs)}</ul>`;
     }
 
     const gridCards = new Map(); // `${biome.id}|${building.id}` -> BuildingInTownElement
@@ -364,14 +394,15 @@ export function setup(ctx) {
             if (buildings.length === 0) continue;
             let header = gridHeaders.get(biome.id);
             if (header === undefined) {
-                header = createElement('div', { className: 'col-12 mt-2 mb-1 tso-biome-header' });
+                header = createElement('div', { className: 'col-12 mt-2 mb-1 d-flex flex-wrap align-items-center tso-biome-header' });
                 gridHeaders.set(biome.id, header);
             }
             header.innerHTML = `<img src="${esc(biome.media)}" class="tso-icon-md mr-1">
                 <span class="font-w600">${esc(biome.name)}</span>
                 <small class="text-muted ml-1">${buildings.length}</small>
                 <button type="button" class="btn btn-sm btn-outline-secondary ml-2 tso-open-btn" data-tso-open="${esc(biome.id)}">
-                    <i class="fa fa-external-link-alt mr-1"></i>Открыть биом</button>`;
+                    <i class="fa fa-external-link-alt mr-1"></i>Открыть биом</button>
+                ${renderRepairAll(biome)}`;
             nodes.push(header);
             for (const building of buildings) {
                 const el = getGridCard(building, biome);
@@ -468,19 +499,33 @@ export function setup(ctx) {
         };
 
         // Своя сетка зданий для нескольких биомов
-        ui.grid = createElement('div', { className: `${tsTown.className} tso-grid d-none` });
+        ui.grid = createElement('div', { className: `${tsTown.className} tso-grid` });
+        ui.gridWrap = createElement('div', { className: 'col-12 px-0 d-none' });
+        ui.gridWrap.append(ui.grid);
         ui.grid.onclick = (e) => {
             const t = township();
             const open = e.target.closest('[data-tso-open]');
             if (open) {
                 const biome = t.biomes.getObjectByID(open.dataset.tsoOpen);
                 if (biome) openBiome(biome);
+                return;
+            }
+            const repairAll = e.target.closest('[data-tso-repair-all]');
+            if (repairAll) {
+                const biome = t.biomes.getObjectByID(repairAll.dataset.tsoRepairAll);
+                if (biome) inBiome(biome, (tw) => tw.repairAllBuildingsInCurrentBiome());
             }
         };
 
         const filterRow = createElement('div', { className: 'row no-gutters' });
         filterRow.append(filterBar);
-        tsTown.before(filterRow, ui.grid);
+        tsTown.before(filterRow);
+        tsTown.append(ui.gridWrap);
+
+        // Игровой ряд «Починить все в биоме» (не трогаем общий «Починить все»)
+        const biomeCosts = document.getElementById('TOWN_REPAIR_ALL_BIOME_COSTS');
+        const biomeRow = biomeCosts && biomeCosts.parentElement;
+        if (biomeRow && !biomeRow.contains(document.getElementById('TOWN_REPAIR_ALL_COSTS'))) ui.biomeRepairRow = biomeRow;
 
         initialized = true;
         renderFilterBar();

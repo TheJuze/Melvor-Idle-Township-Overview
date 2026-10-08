@@ -34,10 +34,11 @@
     padding: 0 6px;
     font-size: 0.75rem;
 }
-/* Жёлтая кнопка ремонта рядом с зелёной кнопкой стройки — по верху */
-.tso-repair-btn.tso-repair-top {
-    /* flex-раскладка и inline-block — работает при любой из них */
-    align-self: flex-start !important;
-    vertical-align: top !important;
-    margin-top: 0 !important;
+/* В режиме сетки прячем игровые карточки зданий — свои лежат глубже, в .tso-grid */
+.tso-grid-mode > building-in-town {
+    display: none !important;
+}
+.tso-inline-costs {
+    display: inline-flex;
+    flex-wrap: wrap;
 }
