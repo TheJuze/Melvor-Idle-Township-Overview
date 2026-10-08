@@ -302,6 +302,36 @@ export function setup(ctx) {
             <img src="${esc(img)}" class="tso-icon-sm"><span class="${cls}">${signed(value)}</span></span>`;
     }
 
+    /** Сколько ресурса есть у игрока — как в игре: GP и AP хранятся отдельно от ресурсов города */
+    function haveAmount(resource) {
+        switch (resource.id) {
+            case 'melvorF:GP':
+                return game.gp.amount;
+            case 'melvorItA:AP':
+                return game.abyssalPieces !== undefined ? game.abyssalPieces.amount : 0;
+            default:
+                return resource.amount;
+        }
+    }
+
+    function costItem(resource, cost) {
+        const cls = haveAmount(resource) >= cost ? 'text-success' : 'text-danger font-w600';
+        return `<span class="tso-res ${cls}"><img src="${esc(resource.media)}" class="tso-icon-sm">${fmt(cost)}</span>`;
+    }
+
+    /** Стоимость постройки qty зданий — та же формула, что в карточке игры */
+    function renderBuildCost(building, biome, qty) {
+        const t = township();
+        return t
+            .getBuildingCostsForBiome(building, biome)
+            .map(({ resource, quantity }) => {
+                let cost = quantity * qty;
+                if (resource.type !== TownshipResourceTypeID.Currency) cost = t.modifyBuildingResourceCost(cost);
+                return cost > 0 ? costItem(resource, cost) : '';
+            })
+            .join('');
+    }
+
     function renderRepairCost(building, biome) {
         const t = township();
         const forCosts =
@@ -309,8 +339,7 @@ export function setup(ctx) {
         return t
             .getBuildingCostsForBiome(forCosts, biome)
             .map(({ resource, quantity }) => {
-                const cost = Math.floor(t.getSingleResourceRepairCostForBuilding(building, biome, quantity));
-                return `<span class="tso-res"><img src="${esc(resource.media)}" class="tso-icon-sm">${fmt(cost)}</span>`;
+                return costItem(resource, Math.floor(t.getSingleResourceRepairCostForBuilding(building, biome, quantity)));
             })
             .join('');
     }
@@ -343,6 +372,7 @@ export function setup(ctx) {
         const pct = max > 0 ? Math.min(100, (count / max) * 100) : 0;
 
         let buildHtml = '';
+        let buildCostHtml = '';
         if (count < max) {
             const qty = buildQty(building, biome);
             const tierOk = t.canBuildTierOfBuilding(building);
@@ -351,6 +381,8 @@ export function setup(ctx) {
             buildHtml = `<button type="button" class="btn btn-sm btn-success mr-1" data-tso-build="${esc(building.id)}"
                 data-tso-biome="${esc(biome.id)}" ${can ? '' : `disabled title="${why}"`}>
                 <i class="fa fa-hammer mr-1"></i>Построить${qty > 1 ? ` ×${qty}` : ''}</button>`;
+            buildCostHtml = `<div class="mt-1"><small class="font-w600 mr-1">Стоимость (${Math.max(qty, 1)}):</small>
+                <small>${renderBuildCost(building, biome, Math.max(qty, 1))}</small></div>`;
         }
 
         let repairHtml = '';
@@ -380,6 +412,7 @@ export function setup(ctx) {
                     </div>
                 </div>
                 ${out ? `<div class="mt-1">${out}</div>` : ''}
+                ${buildCostHtml}
                 ${repairHtml}
                 <div class="mt-1">
                     ${buildHtml}
@@ -532,6 +565,11 @@ export function setup(ctx) {
         if (!initialized) return;
         if (state.broken && !useGrid()) townshipUI.updateTownSummary();
         scheduleRender();
+    });
+
+    // Ресурсы изменились — обновить цены (зелёный/красный) и доступность кнопок
+    ctx.patch(TownshipUI, 'updateResourceAmounts').after(() => {
+        if (initialized && useGrid()) scheduleRender();
     });
 
     ctx.patch(Township, 'setTownBiome').after(() => {
