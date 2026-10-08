@@ -34,7 +34,7 @@
     padding: 0 6px;
     font-size: 0.75rem;
 }
-/* Жёлтая кнопка ремонта рядом с зелёной кнопкой стройки */
-.tso-repair-btn {
-    margin-top: 4px;
+/* Жёлтая кнопка ремонта рядом с зелёной кнопкой стройки — по верху */
+.tso-repair-btn.tso-repair-top {
+    align-self: flex-start;
 }

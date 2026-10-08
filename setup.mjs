@@ -305,6 +305,9 @@ export function setup(ctx) {
             hideElement(el.upgradeButtonGroup);
         }
 
+        // Рядом с кнопкой стройки — по верху, одна — по центру
+        el.repairButton.classList.toggle('tso-repair-top', canBuild);
+
         if (broken) {
             el.updateBuildingRepairCosts(building, t);
             showElement(el.repairContainer);
