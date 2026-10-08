@@ -80,8 +80,28 @@ export function setup(ctx) {
         return t.isBuildingAvailable(building, biome) && !t.hasBuildingBeenUpgraded(building, biome);
     }
 
+    /**
+     * Сколько зданий реально стоит. У ещё не построенной ступени улучшения
+     * (0/N) работают здания предыдущей ступени, их и считаем.
+     */
+    function producer(building, biome) {
+        const count = biome.getBuildingCount(building);
+        if (count > 0) return { building, count };
+        const from = building.upgradesFrom;
+        if (from !== undefined && biome.getBuildingCount(from) > 0) return { building: from, count: biome.getBuildingCount(from) };
+        return { building, count: 0 };
+    }
+
+    /** Сломано только то, что построено: у пустых зданий бывает «залипший» износ */
     function isBroken(building, biome) {
-        return township().buildingRequiresRepair(building, biome);
+        return producer(building, biome).count > 0 && township().buildingRequiresRepair(building, biome);
+    }
+
+    /** Сколько зданий построит кнопка — так же, как считает сама игра */
+    function buildQty(building, biome) {
+        const t = township();
+        const qty = t.upgradeQty > 0 ? t.upgradeQty : t.getMaxAffordableBuildingQty(building, biome);
+        return Math.min(t.getBuildingCountRemainingForLevelUp(building, biome), qty);
     }
 
     function producesSelected(building, biome) {
@@ -186,18 +206,21 @@ export function setup(ctx) {
         scheduleRender();
     }
 
-    function repairIn(building, biome) {
+    /** Ремонт и стройка в игре работают только с текущим биомом, поэтому подменяем его на время действия */
+    function inBiome(biome, action) {
         const t = township();
         const prev = t.currentTownBiome;
-        // repairBuilding работает только с текущим биомом, поэтому подменяем его на время ремонта
         t.currentTownBiome = biome;
         try {
-            t.repairBuilding(building);
+            action(t);
         } finally {
             if (t.currentTownBiome !== prev) t.setTownBiome(prev, false);
         }
         scheduleRender();
     }
+
+    const repairIn = (building, biome) => inBiome(biome, (t) => t.repairBuilding(building));
+    const buildIn = (building, biome) => inBiome(biome, (t) => t.buildBuilding(building));
 
     function openBiome(biome) {
         state.biomes = new Set([biome.id]);
@@ -298,19 +321,20 @@ export function setup(ctx) {
         const max = building.maxUpgrades;
         const eff = t.getBuildingEfficiencyInBiome(building, biome);
         const effClass = eff >= 100 ? 'text-success' : eff >= 50 ? 'text-warning' : 'text-danger';
-        const provides = t.getProvidesForBiome(building, biome);
+        const src = producer(building, biome);
+        const provides = t.getProvidesForBiome(src.building, biome);
 
         // Итоговое производство всех зданий этого типа, с учётом износа
         let out = '';
         STATS.forEach((s) => {
             if (provides === undefined || !provides[s.key]) return;
-            const v = t[s.get](building, biome) * count;
+            const v = t[s.get](src.building, biome) * src.count;
             if (v !== 0) out += statLine(icon(townshipIcons[s.key]), v, s.name, state.produces.has(STAT_PREFIX + s.key));
         });
         if (provides !== undefined) {
             provides.resources.forEach((qty, resource) => {
                 if (qty === 0) return;
-                const v = t.getSingleResourceGainAmountInBiome(resource, building, biome, true) * count;
+                const v = t.getSingleResourceGainAmountInBiome(resource, src.building, biome, true) * src.count;
                 out += statLine(resource.media, v, `${resource.name} за тик`, state.produces.has(resource.id));
             });
         }
@@ -318,8 +342,19 @@ export function setup(ctx) {
         const upgradeName = building.upgradesTo !== undefined ? building.upgradesTo.name : '';
         const pct = max > 0 ? Math.min(100, (count / max) * 100) : 0;
 
+        let buildHtml = '';
+        if (count < max) {
+            const qty = buildQty(building, biome);
+            const tierOk = t.canBuildTierOfBuilding(building);
+            const can = tierOk && qty > 0 && t.canAffordBuilding(building, biome, qty);
+            const why = !tierOk ? 'Не выполнены требования' : 'Не хватает ресурсов';
+            buildHtml = `<button type="button" class="btn btn-sm btn-success mr-1" data-tso-build="${esc(building.id)}"
+                data-tso-biome="${esc(biome.id)}" ${can ? '' : `disabled title="${why}"`}>
+                <i class="fa fa-hammer mr-1"></i>Построить${qty > 1 ? ` ×${qty}` : ''}</button>`;
+        }
+
         let repairHtml = '';
-        if (eff < 100) {
+        if (isBroken(building, biome)) {
             const canAfford = t.canAffordRepair(building, biome);
             repairHtml = `<div class="mt-1 d-flex flex-wrap align-items-center">
                 <button type="button" class="btn btn-sm btn-warning mr-2" data-tso-repair="${esc(building.id)}"
@@ -330,13 +365,13 @@ export function setup(ctx) {
         }
 
         return `<div class="col-12 col-md-6 col-xl-4 p-1">
-            <div class="block block-rounded mb-0 p-2 h-100 tso-card ${eff < 100 ? 'tso-broken' : ''}">
+            <div class="block block-rounded mb-0 p-2 h-100 tso-card ${isBroken(building, biome) ? 'tso-broken' : ''}">
                 <div class="d-flex align-items-start">
                     <img src="${esc(building.media)}" class="tso-icon-lg mr-2">
                     <div class="flex-grow-1 min-w-0">
                         <div class="d-flex justify-content-between">
                             <span class="font-w600">${esc(building.name)}</span>
-                            <small class="${effClass} font-w600 text-nowrap ml-1"><i class="fa fa-tools"></i> ${fmt(eff)}%</small>
+                            ${src.count > 0 ? `<small class="${effClass} font-w600 text-nowrap ml-1"><i class="fa fa-tools"></i> ${fmt(eff)}%</small>` : ''}
                         </div>
                         <div class="progress tso-progress mt-1">
                             <div class="progress-bar ${count >= max ? 'bg-success' : 'bg-info'}" style="width:${pct}%"></div>
@@ -347,6 +382,7 @@ export function setup(ctx) {
                 ${out ? `<div class="mt-1">${out}</div>` : ''}
                 ${repairHtml}
                 <div class="mt-1">
+                    ${buildHtml}
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-tso-open="${esc(biome.id)}">
                         <i class="fa fa-external-link-alt mr-1"></i>Открыть биом</button>
                 </div>
@@ -453,6 +489,13 @@ export function setup(ctx) {
                 const building = t.buildings.getObjectByID(repair.dataset.tsoRepair);
                 const biome = t.biomes.getObjectByID(repair.dataset.tsoBiome);
                 if (building && biome) repairIn(building, biome);
+                return;
+            }
+            const build = e.target.closest('[data-tso-build]');
+            if (build) {
+                const building = t.buildings.getObjectByID(build.dataset.tsoBuild);
+                const biome = t.biomes.getObjectByID(build.dataset.tsoBiome);
+                if (building && biome) buildIn(building, biome);
                 return;
             }
             const open = e.target.closest('[data-tso-open]');
