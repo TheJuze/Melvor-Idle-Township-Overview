@@ -1,5 +1,0 @@
-{
-  "namespace": "townshipOverview",
-  "setup": "setup.mjs",
-  "load": ["styles.css"]
-}
