@@ -12,6 +12,7 @@ The interface follows the game language: Russian for `ru`, English for everythin
   - Two or more → the game's own building cards for all selected biomes, grouped by biome. Build and repair work directly from this view, and each biome header has **Open biome** and **Repair all in biome** (with cost).
 - **"Produces" filter.** Filter buildings by what they provide: population, happiness, education, storage, worship, fortification, soul storage, or any resource. Pick several at once; **All** clears the filter. Works in both the normal view and multi-select.
 - **Broken.** Shows only damaged buildings, with a count on the button and a red badge on each biome.
+- **Can build.** Shows only buildings you can build right now: requirements met, not maxed, and enough resources for at least one. Combines with the other filters.
 - **Only available actions.** A card shows the green build button if you can build, the yellow repair button if it is damaged (next to the build button when both apply), or no buttons at all.
 
 Settings are saved per character.
@@ -43,6 +44,7 @@ Settings are saved per character.
   - Два и больше — стандартные карточки зданий всех выбранных биомов, сгруппированные по биомам. Строить и чинить можно прямо отсюда, в заголовке биома есть «Открыть биом» и «Починить все в биоме» со стоимостью.
 - **Фильтр «Производит».** Население, счастье, образование, хранилище, поклонение, укрепление, хранилище душ или любой ресурс. Можно выбрать несколько; «Все» снимает фильтр.
 - **Сломанные.** Только здания с износом; число на кнопке и красный значок на биомах.
+- **Можно построить.** Только здания, которые можно построить прямо сейчас: требования выполнены, не максимум, ресурсов хватает хотя бы на одно. Сочетается с остальными фильтрами.
 - **Только доступные действия.** Зелёная кнопка — если можно строить, жёлтая — если есть износ (рядом с зелёной, если доступно и то, и другое). Если ничего нельзя — кнопок нет.
 
 Настройки сохраняются для каждого персонажа отдельно.

@@ -11,6 +11,7 @@ const STRINGS = {
         clear: 'Clear',
         produces: 'Produces:',
         broken: 'Broken',
+        buildable: 'Can build',
         resetFilters: 'Reset filters',
         openBiome: 'Open biome',
         repairAllInBiome: 'Repair all in biome',
@@ -29,6 +30,7 @@ const STRINGS = {
         clear: 'Сброс',
         produces: 'Производит:',
         broken: 'Сломанные',
+        buildable: 'Можно построить',
         resetFilters: 'Сбросить фильтры',
         openBiome: 'Открыть биом',
         repairAllInBiome: 'Починить все в биоме',
@@ -61,6 +63,7 @@ export function setup(ctx) {
         biomes: new Set(), // id биомов
         produces: new Set(), // id ресурсов и 'stat:<key>' для характеристик
         broken: false,
+        buildable: false,
     };
 
     let initialized = false;
@@ -78,6 +81,7 @@ export function setup(ctx) {
             if (!saved) return;
             state.multi = !!saved.multi;
             state.broken = !!saved.broken;
+            state.buildable = !!saved.buildable;
             state.biomes = new Set(saved.biomes || []);
             state.produces = new Set(saved.produces || saved.resources || []);
         } catch (e) {
@@ -90,6 +94,7 @@ export function setup(ctx) {
             ctx.characterStorage.setItem(STORAGE_KEY, {
                 multi: state.multi,
                 broken: state.broken,
+                buildable: state.buildable,
                 biomes: [...state.biomes],
                 produces: [...state.produces],
             });
@@ -138,8 +143,23 @@ export function setup(ctx) {
         return STATS.some((s) => (provides[s.key] || 0) > 0 && state.produces.has(STAT_PREFIX + s.key));
     }
 
+    /** Можно построить хотя бы одно здание прямо сейчас: требования выполнены, не максимум, хватает ресурсов */
+    function isBuildable(building, biome) {
+        const t = township();
+        return (
+            !t.isBuildingMaxed(building, biome) &&
+            t.canBuildTierOfBuilding(building) &&
+            t.canAffordBuilding(building, biome, 1)
+        );
+    }
+
+    function countBuildable(biome) {
+        return biome.availableBuildings.filter((b) => isShownInBiome(b, biome) && isBuildable(b, biome)).length;
+    }
+
     function passesFilters(building, biome) {
         if (state.broken && !isBroken(building, biome)) return false;
+        if (state.buildable && !isBuildable(building, biome)) return false;
         return producesSelected(building, biome);
     }
 
@@ -217,9 +237,16 @@ export function setup(ctx) {
         onFiltersChanged();
     }
 
+    function toggleBuildable() {
+        state.buildable = !state.buildable;
+        saveState();
+        onFiltersChanged();
+    }
+
     function resetFilters() {
         state.produces.clear();
         state.broken = false;
+        state.buildable = false;
         saveState();
         onFiltersChanged();
     }
@@ -306,7 +333,9 @@ export function setup(ctx) {
 
         ui.brokenBtn.classList.toggle('btn-danger', state.broken);
         ui.brokenBtn.classList.toggle('btn-outline-danger', !state.broken);
-        ui.resetBtn.classList.toggle('d-none', !(state.broken || state.produces.size > 0));
+        ui.buildableBtn.classList.toggle('btn-success', state.buildable);
+        ui.buildableBtn.classList.toggle('btn-outline-success', !state.buildable);
+        ui.resetBtn.classList.toggle('d-none', !(state.broken || state.buildable || state.produces.size > 0));
     }
 
     function updateBrokenCounts() {
@@ -321,6 +350,12 @@ export function setup(ctx) {
             }
         });
         ui.brokenCount.textContent = total > 0 ? ` (${total})` : '';
+
+        let buildable = 0;
+        township().biomes.forEach((biome) => {
+            if (township().isBiomeUnlocked(biome)) buildable += countBuildable(biome);
+        });
+        ui.buildableCount.textContent = buildable > 0 ? ` (${buildable})` : '';
     }
 
     /** Проверить, что у здания можно сделать, и оставить на карточке только эти кнопки */
@@ -524,6 +559,8 @@ export function setup(ctx) {
                 <div class="mt-1">
                     <button type="button" class="btn btn-sm btn-outline-danger" data-tso="broken">
                         <i class="fa fa-tools mr-1"></i>${tr('broken')}<span data-tso="broken-count"></span></button>
+                    <button type="button" class="btn btn-sm btn-outline-success" data-tso="buildable">
+                        <i class="fa fa-hammer mr-1"></i>${tr('buildable')}<span data-tso="buildable-count"></span></button>
                     <button type="button" class="btn btn-sm btn-outline-secondary d-none" data-tso="reset">${tr('resetFilters')}</button>
                 </div>
             </div>`;
@@ -532,6 +569,9 @@ export function setup(ctx) {
         ui.brokenCount = filterBar.querySelector('[data-tso="broken-count"]');
         ui.resetBtn = filterBar.querySelector('[data-tso="reset"]');
         ui.brokenBtn.onclick = toggleBroken;
+        ui.buildableBtn = filterBar.querySelector('[data-tso="buildable"]');
+        ui.buildableCount = filterBar.querySelector('[data-tso="buildable-count"]');
+        ui.buildableBtn.onclick = toggleBuildable;
         ui.resetBtn.onclick = resetFilters;
         ui.resChips.onclick = (e) => {
             const btn = e.target.closest('[data-tso-res]');
@@ -599,8 +639,11 @@ export function setup(ctx) {
     });
 
     // Ресурсы изменились — обновить цены (зелёный/красный) и доступность кнопок
+    // и счётчик/фильтр «Можно построить»
     ctx.patch(TownshipUI, 'updateResourceAmounts').after(() => {
-        if (initialized && useGrid()) scheduleRender();
+        if (!initialized) return;
+        if (state.buildable && !useGrid()) townshipUI.updateTownSummary();
+        scheduleRender();
     });
 
     ctx.patch(Township, 'setTownBiome').after(() => {
